@@ -38,19 +38,27 @@ if hubspot_file and closer_hours_file and enroller_hours_file:
     enroller_df['Man Hours'] = enroller_df['Man Hours'].astype(str).apply(parse_and_round_up)
     enroller_df = enroller_df[['Rep', 'Man Hours']].rename(columns={'Rep': 'Agent'})
 
-    # Closers calculations
+    # --- FIX: Use Master Agent List from HubSpot ---
+    unique_closers = hubspot_df['CLOSER'].unique()
+    unique_closer_df = pd.DataFrame(unique_closers, columns=['Agent'])
+
     deal_counts = hubspot_df['CLOSER'].value_counts().reset_index()
     deal_counts.columns = ['Agent', 'Deal Count']
+
     saturday_deals = hubspot_df[hubspot_df['DATE'] == '2025-08-02'].groupby('CLOSER').size().reset_index(name='Saturday Deals')
     saturday_deals['CLOSER'] = saturday_deals['CLOSER'].str.strip().str.title()
+
     hubspot_df['Deal Date'] = hubspot_df['DATE'].dt.date
     first_deals = hubspot_df.sort_values(by='DATE').drop_duplicates(subset=['Deal Date'], keep='first')
     first_deal_bonus = first_deals['CLOSER'].value_counts().reset_index()
     first_deal_bonus.columns = ['Agent', 'First Deal Bonus Count']
 
-    closers = closer_df.merge(deal_counts, on='Agent', how='left').fillna(0)
-    closers = closers.merge(saturday_deals.rename(columns={'CLOSER': 'Agent'}), on='Agent', how='left').fillna(0)
-    closers = closers.merge(first_deal_bonus, on='Agent', how='left').fillna(0)
+    # Left Join master list with timesheet and deal counts
+    closers = unique_closer_df.merge(closer_df, on='Agent', how='left')
+    closers = closers.merge(deal_counts, on='Agent', how='left').fillna({'Deal Count': 0})
+    closers = closers.merge(saturday_deals.rename(columns={'CLOSER': 'Agent'}), on='Agent', how='left').fillna({'Saturday Deals': 0})
+    closers = closers.merge(first_deal_bonus, on='Agent', how='left').fillna({'First Deal Bonus Count': 0})
+    closers['Man Hours'] = closers['Man Hours'].fillna(0)
 
     def determine_hourly_rate(deals):
         if deals >= 15:
@@ -91,7 +99,7 @@ if hubspot_file and closer_hours_file and enroller_hours_file:
     enroller_submissions = hubspot_df['ENROLLER'].value_counts().reset_index()
     enroller_submissions.columns = ['Agent', 'Submitted Deals']
 
-    enrollers = enroller_df.merge(enroller_submissions, on='Agent', how='left').fillna(0)
+    enrollers = enroller_df.merge(enroller_submissions, on='Agent', how='left').fillna({'Submitted Deals': 0})
     enrollers['Hourly Rate'] = 18
     enrollers['Hourly Pay'] = enrollers['Man Hours'] * enrollers['Hourly Rate']
     enrollers['Submitted Deals Pay'] = enrollers['Submitted Deals'] * 5
