@@ -2,4 +2,6 @@ streamlit>=1.26
 pandas
 numpy
 openpyxl
+fuzzywuzzy[speedup]
+
 
