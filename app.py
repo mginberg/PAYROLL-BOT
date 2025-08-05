@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from io import BytesIO
 from openpyxl import Workbook
+from fuzzywuzzy import process
 
 st.title("Weekly Payroll Calculator with Closers & Enrollers")
 
@@ -30,17 +31,17 @@ if hubspot_file and closer_hours_file and enroller_hours_file:
         except:
             return 0
     closer_df['Man Hours'] = closer_df['Man Hours'].astype(str).apply(parse_and_round_up)
-    closer_df = closer_df[['Rep', 'Man Hours']].rename(columns={'Rep': 'Agent'})
 
     enroller_df = pd.read_csv(enroller_hours_file)
     enroller_df.columns = enroller_df.columns.str.strip()
     enroller_df['Rep'] = enroller_df['Rep'].str.strip().str.title()
     enroller_df['Man Hours'] = enroller_df['Man Hours'].astype(str).apply(parse_and_round_up)
-    enroller_df = enroller_df[['Rep', 'Man Hours']].rename(columns={'Rep': 'Agent'})
 
-    # --- FIX: Use Master Agent List from HubSpot ---
-    unique_closers = hubspot_df['CLOSER'].unique()
-    unique_closer_df = pd.DataFrame(unique_closers, columns=['Agent'])
+    # Fuzzy Matching to Align Names
+    closer_df['Matched Agent'] = closer_df['Rep'].apply(lambda x: process.extractOne(x, hubspot_df['CLOSER'], score_cutoff=80)[0] if process.extractOne(x, hubspot_df['CLOSER'], score_cutoff=80) else x)
+    closer_df = closer_df.rename(columns={'Matched Agent': 'Agent'})
+    enroller_df['Matched Agent'] = enroller_df['Rep'].apply(lambda x: process.extractOne(x, hubspot_df['ENROLLER'], score_cutoff=80)[0] if process.extractOne(x, hubspot_df['ENROLLER'], score_cutoff=80) else x)
+    enroller_df = enroller_df.rename(columns={'Matched Agent': 'Agent'})
 
     deal_counts = hubspot_df['CLOSER'].value_counts().reset_index()
     deal_counts.columns = ['Agent', 'Deal Count']
@@ -53,8 +54,10 @@ if hubspot_file and closer_hours_file and enroller_hours_file:
     first_deal_bonus = first_deals['CLOSER'].value_counts().reset_index()
     first_deal_bonus.columns = ['Agent', 'First Deal Bonus Count']
 
-    # Left Join master list with timesheet and deal counts
-    closers = unique_closer_df.merge(closer_df, on='Agent', how='left')
+    unique_closers = hubspot_df['CLOSER'].unique()
+    unique_closer_df = pd.DataFrame(unique_closers, columns=['Agent'])
+
+    closers = unique_closer_df.merge(closer_df[['Agent', 'Man Hours']], on='Agent', how='left')
     closers = closers.merge(deal_counts, on='Agent', how='left').fillna({'Deal Count': 0})
     closers = closers.merge(saturday_deals.rename(columns={'CLOSER': 'Agent'}), on='Agent', how='left').fillna({'Saturday Deals': 0})
     closers = closers.merge(first_deal_bonus, on='Agent', how='left').fillna({'First Deal Bonus Count': 0})
@@ -95,7 +98,6 @@ if hubspot_file and closer_hours_file and enroller_hours_file:
     closers['$25 Bonus Count'] = 0
     closers['$50 Bonus Count'] = 0
 
-    # Enrollers calculations
     enroller_submissions = hubspot_df['ENROLLER'].value_counts().reset_index()
     enroller_submissions.columns = ['Agent', 'Submitted Deals']
 
@@ -107,7 +109,6 @@ if hubspot_file and closer_hours_file and enroller_hours_file:
     enrollers['$25 Bonus Count'] = 0
     enrollers['$50 Bonus Count'] = 0
 
-    # Combine export structure
     closers_export = closers[['Agent', 'Deal Count', 'Man Hours', 'Hourly Rate', 'Hourly Pay', 'Total Deal Pay', 'Total Bonus Pay', 'Manual Bonus', '$25 Bonus Count', '$50 Bonus Count']]
     enrollers_export = enrollers[['Agent', 'Submitted Deals', 'Man Hours', 'Hourly Rate', 'Hourly Pay', 'Submitted Deals Pay', 'Manual Bonus', '$25 Bonus Count', '$50 Bonus Count']]
     enrollers_export = enrollers_export.rename(columns={'Submitted Deals': 'Deal Count', 'Submitted Deals Pay': 'Total Deal Pay'})
