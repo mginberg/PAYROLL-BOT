@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+from io import BytesIO
+from openpyxl import Workbook
 
 st.title("Weekly Payroll Calculator with Closers & Enrollers")
 
@@ -10,6 +12,7 @@ closer_hours_file = st.file_uploader("Upload Closer Timesheet CSV")
 enroller_hours_file = st.file_uploader("Upload Enroller Timesheet CSV")
 
 if hubspot_file and closer_hours_file and enroller_hours_file:
+    # Load and process data
     hubspot_df = pd.read_csv(hubspot_file)
     hubspot_df.columns = hubspot_df.columns.str.strip()
     hubspot_df['CLOSER'] = hubspot_df['CLOSER'].str.strip().str.title()
@@ -35,6 +38,7 @@ if hubspot_file and closer_hours_file and enroller_hours_file:
     enroller_df['Man Hours'] = enroller_df['Man Hours'].astype(str).apply(parse_and_round_up)
     enroller_df = enroller_df[['Rep', 'Man Hours']].rename(columns={'Rep': 'Agent'})
 
+    # Closers calculations
     deal_counts = hubspot_df['CLOSER'].value_counts().reset_index()
     deal_counts.columns = ['Agent', 'Deal Count']
     saturday_deals = hubspot_df[hubspot_df['DATE'] == '2025-08-02'].groupby('CLOSER').size().reset_index(name='Saturday Deals')
@@ -82,11 +86,8 @@ if hubspot_file and closer_hours_file and enroller_hours_file:
     closers['Manual Bonus'] = 0
     closers['$25 Bonus Count'] = 0
     closers['$50 Bonus Count'] = 0
-    closers['$25 Bonus Pay'] = closers['$25 Bonus Count'] * 25
-    closers['$50 Bonus Pay'] = closers['$50 Bonus Count'] * 50
-    closers['Total Pay'] = closers['Hourly Pay'] + closers['Total Deal Pay'] + closers['Total Bonus Pay'] + closers['Manual Bonus'] + closers['$25 Bonus Pay'] + closers['$50 Bonus Pay']
-    closers['CPA'] = closers.apply(lambda row: row['Total Pay'] / row['Deal Count'] if row['Deal Count'] > 0 else 0, axis=1)
 
+    # Enrollers calculations
     enroller_submissions = hubspot_df['ENROLLER'].value_counts().reset_index()
     enroller_submissions.columns = ['Agent', 'Submitted Deals']
 
@@ -97,31 +98,48 @@ if hubspot_file and closer_hours_file and enroller_hours_file:
     enrollers['Manual Bonus'] = 0
     enrollers['$25 Bonus Count'] = 0
     enrollers['$50 Bonus Count'] = 0
-    enrollers['$25 Bonus Pay'] = enrollers['$25 Bonus Count'] * 25
-    enrollers['$50 Bonus Pay'] = enrollers['$50 Bonus Count'] * 50
-    enrollers['Total Pay'] = enrollers['Hourly Pay'] + enrollers['Submitted Deals Pay'] + enrollers['Manual Bonus'] + enrollers['$25 Bonus Pay'] + enrollers['$50 Bonus Pay']
-    enrollers['CPA'] = enrollers.apply(lambda row: row['Total Pay'] / row['Submitted Deals'] if row['Submitted Deals'] > 0 else 0, axis=1)
 
-    closers_export = closers[['Agent', 'Deal Count', 'Man Hours', 'Hourly Rate', 'Hourly Pay',
-                              'Total Deal Pay', 'Total Bonus Pay', 'Manual Bonus', '$25 Bonus Count', '$50 Bonus Count',
-                              'Total Pay', 'CPA']]
-    enrollers_export = enrollers[['Agent', 'Submitted Deals', 'Man Hours', 'Hourly Rate', 'Hourly Pay',
-                                  'Submitted Deals Pay', 'Manual Bonus', '$25 Bonus Count', '$50 Bonus Count',
-                                  'Total Pay', 'CPA']]
+    # Combine export structure
+    closers_export = closers[['Agent', 'Deal Count', 'Man Hours', 'Hourly Rate', 'Hourly Pay', 'Total Deal Pay', 'Total Bonus Pay', 'Manual Bonus', '$25 Bonus Count', '$50 Bonus Count']]
+    enrollers_export = enrollers[['Agent', 'Submitted Deals', 'Man Hours', 'Hourly Rate', 'Hourly Pay', 'Submitted Deals Pay', 'Manual Bonus', '$25 Bonus Count', '$50 Bonus Count']]
     enrollers_export = enrollers_export.rename(columns={'Submitted Deals': 'Deal Count', 'Submitted Deals Pay': 'Total Deal Pay'})
 
     combined_export = pd.concat([closers_export, enrollers_export], ignore_index=True, sort=False).fillna(0)
 
-    st.subheader("Payroll Summary (Closers + Enrollers)")
-    st.dataframe(combined_export.round(2))
+    # XLSX Export with Formulas
+    output = BytesIO()
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Payroll Summary"
 
-    total_deals = combined_export['Deal Count'].sum()
-    total_pay = combined_export['Total Pay'].sum()
-    overall_cpa = total_pay / total_deals if total_deals > 0 else 0
+    headers = ['Agent', 'Deal Count', 'Man Hours', 'Hourly Rate', 'Hourly Pay', 'Total Deal Pay', 'Total Bonus Pay', 'Manual Bonus', '$25 Bonus Count', '$50 Bonus Count', 'Total Pay', 'CPA']
+    ws.append(headers)
 
-    st.write(f"### Overall CPA: ${overall_cpa:.2f}")
+    for idx, row in combined_export.iterrows():
+        row_num = idx + 2
+        data = [
+            row['Agent'],
+            row['Deal Count'],
+            row['Man Hours'],
+            row['Hourly Rate'],
+            row['Hourly Pay'],
+            row['Total Deal Pay'],
+            row['Total Bonus Pay'],
+            '',  # Manual Bonus
+            '',  # $25 Bonus Count
+            '',  # $50 Bonus Count
+            f"=E{row_num}+F{row_num}+G{row_num}+H{row_num}+I{row_num}*25+J{row_num}*50",  # Total Pay Formula
+            f"=K{row_num}/B{row_num}" if row['Deal Count'] > 0 else "0"  # CPA
+        ]
+        ws.append(data)
 
-    st.download_button("Download Payroll CSV", combined_export.to_csv(index=False).encode('utf-8'), "Payroll_Summary.csv", "text/csv")
+    total_rows = len(combined_export) + 2
+    ws[f"L{total_rows}"] = "Overall CPA:"
+    ws[f"M{total_rows}"] = f"=SUM(K2:K{total_rows-1})/SUM(B2:B{total_rows-1})"
+
+    wb.save(output)
+
+    st.download_button("Download Payroll XLSX", output.getvalue(), "Payroll_Summary.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 else:
     st.warning("Please upload all three CSV files to proceed.")
