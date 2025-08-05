@@ -36,7 +36,6 @@ if hubspot_file and closer_hours_file and enroller_hours_file:
     enroller_df['Rep'] = enroller_df['Rep'].str.strip().str.title()
     enroller_df['Man Hours'] = enroller_df['Man Hours'].astype(str).apply(parse_and_round_up)
 
-    # Fuzzy match Closers
     def fuzzy_match(name, name_list):
         match = process.extractOne(name, name_list, score_cutoff=80)
         return match[0] if match else name
@@ -55,9 +54,9 @@ if hubspot_file and closer_hours_file and enroller_hours_file:
     first_deal_bonus = first_deals['Matched Agent'].value_counts().reset_index()
     first_deal_bonus.columns = ['Agent', 'First Deal Bonus Count']
 
-    payroll_df = deal_counts.merge(closer_df[['Agent', 'Man Hours']], on='Agent', how='left')
+    payroll_df = pd.merge(closer_df[['Agent', 'Man Hours']], deal_counts, on='Agent', how='outer').fillna({'Deal Count': 0})
     payroll_df = payroll_df.merge(saturday_deals, on='Agent', how='left').merge(first_deal_bonus, on='Agent', how='left')
-    payroll_df = payroll_df.fillna({'Man Hours': 0, 'Saturday Deals': 0, 'First Deal Bonus Count': 0})
+    payroll_df = payroll_df.fillna({'Saturday Deals': 0, 'First Deal Bonus Count': 0, 'Man Hours': 0})
 
     def determine_hourly_rate(deals):
         if deals >= 15:
@@ -92,7 +91,6 @@ if hubspot_file and closer_hours_file and enroller_hours_file:
     payroll_df['$25 Bonus Count'] = 0
     payroll_df['$50 Bonus Count'] = 0
 
-    # Enroller Processing
     enroller_df['Agent'] = enroller_df['Rep'].apply(lambda x: fuzzy_match(x, hubspot_df['ENROLLER'].unique()))
     enroller_submissions = hubspot_df['ENROLLER'].value_counts().reset_index()
     enroller_submissions.columns = ['Agent', 'Submitted Deals']
@@ -112,9 +110,11 @@ if hubspot_file and closer_hours_file and enroller_hours_file:
     closers_export = payroll_df[['Agent', 'Deal Count', 'Man Hours', 'Hourly Rate', 'Hourly Pay', 'Regular Deals Pay', 'Saturday Deals Pay', 'Hours Bonus', 'First Deal Bonus', 'Manual Bonus', '$25 Bonus Count', '$50 Bonus Count']]
     enrollers_export = enrollers[['Agent', 'Deal Count', 'Man Hours', 'Hourly Rate', 'Hourly Pay', 'Regular Deals Pay', 'Saturday Deals Pay', 'Hours Bonus', 'First Deal Bonus', 'Manual Bonus', '$25 Bonus Count', '$50 Bonus Count']]
 
+    closers_export = closers_export.sort_values(by='Agent').reset_index(drop=True)
+    enrollers_export = enrollers_export.sort_values(by='Agent').reset_index(drop=True)
+
     combined_export = pd.concat([closers_export, enrollers_export], ignore_index=True, sort=False).fillna(0)
 
-    # XLSX Export
     output = BytesIO()
     wb = Workbook()
     ws = wb.active
@@ -135,11 +135,11 @@ if hubspot_file and closer_hours_file and enroller_hours_file:
             row['Saturday Deals Pay'],
             row['Hours Bonus'],
             row['First Deal Bonus'],
-            '',  # Manual Bonus
-            '',  # $25 Bonus Count
-            '',  # $50 Bonus Count
-            f"=E{row_num}+F{row_num}+G{row_num}+H{row_num}+I{row_num}+J{row_num}+K{row_num}*25+L{row_num}*50",  # Total Pay Formula
-            f"=M{row_num}/B{row_num}" if row['Deal Count'] > 0 else "0"  # CPA
+            '',
+            '',
+            '',
+            f"=E{row_num}+F{row_num}+G{row_num}+H{row_num}+I{row_num}+J{row_num}+K{row_num}*25+L{row_num}*50",
+            f"=M{row_num}/B{row_num}" if row['Deal Count'] > 0 else "0"
         ]
         ws.append(data)
 
