@@ -90,10 +90,8 @@ if hubspot_file and closer_hours_file and enroller_hours_file:
     closers['Regular Deals'] = closers['Deal Count'] - closers['Saturday Deals']
     closers['Regular Deals Pay'] = closers['Regular Deals'] * 35
     closers['Saturday Deals Pay'] = closers['Saturday Deals'] * 50
-    closers['Total Deal Pay'] = closers['Regular Deals Pay'] + closers['Saturday Deals Pay']
     closers['Hours Bonus'] = closers['Man Hours'].apply(hours_bonus)
     closers['First Deal Bonus'] = closers['First Deal Bonus Count'] * 25
-    closers['Total Bonus Pay'] = closers['Hours Bonus'] + closers['First Deal Bonus']
     closers['Manual Bonus'] = 0
     closers['$25 Bonus Count'] = 0
     closers['$50 Bonus Count'] = 0
@@ -105,23 +103,27 @@ if hubspot_file and closer_hours_file and enroller_hours_file:
     enrollers['Hourly Rate'] = 18
     enrollers['Hourly Pay'] = enrollers['Man Hours'] * enrollers['Hourly Rate']
     enrollers['Submitted Deals Pay'] = enrollers['Submitted Deals'] * 5
+    enrollers['Regular Deals Pay'] = enrollers['Submitted Deals Pay']
+    enrollers['Saturday Deals Pay'] = 0
+    enrollers['Hours Bonus'] = 0
+    enrollers['First Deal Bonus'] = 0
     enrollers['Manual Bonus'] = 0
     enrollers['$25 Bonus Count'] = 0
     enrollers['$50 Bonus Count'] = 0
 
-    closers_export = closers[['Agent', 'Deal Count', 'Man Hours', 'Hourly Rate', 'Hourly Pay', 'Total Deal Pay', 'Total Bonus Pay', 'Manual Bonus', '$25 Bonus Count', '$50 Bonus Count']]
-    enrollers_export = enrollers[['Agent', 'Submitted Deals', 'Man Hours', 'Hourly Rate', 'Hourly Pay', 'Submitted Deals Pay', 'Manual Bonus', '$25 Bonus Count', '$50 Bonus Count']]
-    enrollers_export = enrollers_export.rename(columns={'Submitted Deals': 'Deal Count', 'Submitted Deals Pay': 'Total Deal Pay'})
+    closers_export = closers[['Agent', 'Deal Count', 'Man Hours', 'Hourly Rate', 'Hourly Pay', 'Regular Deals Pay', 'Saturday Deals Pay', 'Hours Bonus', 'First Deal Bonus', 'Manual Bonus', '$25 Bonus Count', '$50 Bonus Count']]
+    enrollers_export = enrollers[['Agent', 'Submitted Deals', 'Man Hours', 'Hourly Rate', 'Hourly Pay', 'Regular Deals Pay', 'Saturday Deals Pay', 'Hours Bonus', 'First Deal Bonus', 'Manual Bonus', '$25 Bonus Count', '$50 Bonus Count']]
+    enrollers_export = enrollers_export.rename(columns={'Submitted Deals': 'Deal Count'})
 
     combined_export = pd.concat([closers_export, enrollers_export], ignore_index=True, sort=False).fillna(0)
 
-    # XLSX Export with Formulas
+    # XLSX Export with Detailed Formulas
     output = BytesIO()
     wb = Workbook()
     ws = wb.active
     ws.title = "Payroll Summary"
 
-    headers = ['Agent', 'Deal Count', 'Man Hours', 'Hourly Rate', 'Hourly Pay', 'Total Deal Pay', 'Total Bonus Pay', 'Manual Bonus', '$25 Bonus Count', '$50 Bonus Count', 'Total Pay', 'CPA']
+    headers = ['Agent', 'Deal Count', 'Man Hours', 'Hourly Rate', 'Hourly Pay', 'Regular Deals Pay', 'Saturday Deals Pay', 'Hours Bonus', 'First Deal Bonus', 'Manual Bonus', '$25 Bonus Count', '$50 Bonus Count', 'Total Pay', 'CPA']
     ws.append(headers)
 
     for idx, row in combined_export.iterrows():
@@ -132,19 +134,21 @@ if hubspot_file and closer_hours_file and enroller_hours_file:
             row['Man Hours'],
             row['Hourly Rate'],
             row['Hourly Pay'],
-            row['Total Deal Pay'],
-            row['Total Bonus Pay'],
+            row['Regular Deals Pay'],
+            row['Saturday Deals Pay'],
+            row['Hours Bonus'],
+            row['First Deal Bonus'],
             '',  # Manual Bonus
             '',  # $25 Bonus Count
             '',  # $50 Bonus Count
-            f"=E{row_num}+F{row_num}+G{row_num}+H{row_num}+I{row_num}*25+J{row_num}*50",  # Total Pay Formula
-            f"=K{row_num}/B{row_num}" if row['Deal Count'] > 0 else "0"  # CPA
+            f"=E{row_num}+F{row_num}+G{row_num}+H{row_num}+I{row_num}+J{row_num}*25+K{row_num}*50+L{row_num}",  # Total Pay Formula
+            f"=M{row_num}/B{row_num}" if row['Deal Count'] > 0 else "0"  # CPA
         ]
         ws.append(data)
 
     total_rows = len(combined_export) + 2
-    ws[f"L{total_rows}"] = "Overall CPA:"
-    ws[f"M{total_rows}"] = f"=SUM(K2:K{total_rows-1})/SUM(B2:B{total_rows-1})"
+    ws[f"M{total_rows}"] = "Overall CPA:"
+    ws[f"N{total_rows}"] = f"=SUM(M2:M{total_rows-1})/SUM(B2:B{total_rows-1})"
 
     wb.save(output)
 
