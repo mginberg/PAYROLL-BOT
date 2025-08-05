@@ -43,7 +43,10 @@ if hubspot_file and closer_hours_file and enroller_hours_file:
     deal_counts.columns = ['Agent', 'Deal Count']
     saturday_deals = hubspot_df[hubspot_df['DATE'] == '2025-08-02'].groupby('CLOSER').size().reset_index(name='Saturday Deals')
     saturday_deals['CLOSER'] = saturday_deals['CLOSER'].str.strip().str.title()
-    first_deals = hubspot_df.sort_values(by='DATE').drop_duplicates(subset=['DATE'].apply(lambda x: x.date()), keep='first')
+
+    # First Deal of the Day Fix
+    hubspot_df['Deal Date'] = hubspot_df['DATE'].dt.date
+    first_deals = hubspot_df.sort_values(by='DATE').drop_duplicates(subset=['Deal Date'], keep='first')
     first_deal_bonus = first_deals['CLOSER'].value_counts().reset_index()
     first_deal_bonus.columns = ['Agent', 'First Deal Bonus Count']
 
@@ -103,7 +106,7 @@ if hubspot_file and closer_hours_file and enroller_hours_file:
                               'Total Deal Pay', 'Total Bonus Pay', 'Manual Bonus', 'Total Pay', 'CPA']]
     enrollers_export = enrollers[['Agent', 'Submitted Deals', 'Man Hours', 'Hourly Rate', 'Hourly Pay',
                                   'Submitted Deals Pay', 'Manual Bonus', 'Total Pay', 'CPA']]
-    enrollers_export = enrollers_export.rename(columns={'Submitted Deals': 'Deal Count', 'Submitted Deals Pay': 'Total Deal Pay', 'Total Bonus Pay': 'Total Bonus Pay'})
+    enrollers_export = enrollers_export.rename(columns={'Submitted Deals': 'Deal Count', 'Submitted Deals Pay': 'Total Deal Pay'})
 
     combined_export = pd.concat([closers_export, enrollers_export], ignore_index=True, sort=False).fillna(0)
 
