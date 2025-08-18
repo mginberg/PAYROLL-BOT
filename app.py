@@ -63,6 +63,8 @@ hubspot_df.columns = hubspot_df.columns.str.strip()
 hubspot_df['DATE'] = pd.to_datetime(hubspot_df['DATE'], errors='coerce')
 hubspot_df['CLOSER'] = hubspot_df['CLOSER'].astype(str).str.strip().str.title()
 hubspot_df['ENROLLER'] = hubspot_df['ENROLLER'].astype(str).str.strip().str.title()
+# Create a dedicated column for date-only comparisons
+hubspot_df['DealDate'] = hubspot_df['DATE'].dt.date
 
 # Closer Hours
 closer_df = pd.read_csv(closer_hours_file)
@@ -93,7 +95,8 @@ saturday_deals_df = hubspot_df[hubspot_df['DATE'].dt.weekday == 5] # Monday=0, S
 saturday_deals = saturday_deals_df['Agent'].value_counts().rename_axis('Agent').reset_index(name='Saturday Deals')
 
 # First deal of each day (company-wide) bonus
-first_per_date = hubspot_df.sort_values(by='DATE').drop_duplicates(subset=[hubspot_df['DATE'].dt.date], keep='first')
+# **FIXED LINE:** Use the column name 'DealDate' in the subset list
+first_per_date = hubspot_df.sort_values(by='DATE').drop_duplicates(subset=['DealDate'], keep='first')
 first_deal_bonus = first_per_date['Agent'].value_counts().rename_axis('Agent').reset_index(name='First Deal Bonus Count')
 
 # **NEW LOGIC: Start with agents from the timesheet file ONLY.**
